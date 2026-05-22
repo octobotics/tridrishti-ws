@@ -26,6 +26,46 @@ Important `i2w` paths:
 - `src/i2w/DESIGN.md` - runtime and API design notes
 - `src/i2w/docs/` - additional development documentation
 
+## Submodule Management
+
+This workspace can track external repositories as Git submodules. Submodules keep
+third-party or separately maintained code in its own repository while pinning this
+workspace to a known-good commit.
+
+Clone the workspace with submodules:
+
+```bash
+git clone --recurse-submodules <repo-url>
+```
+
+If the workspace was cloned without submodules, initialize them later:
+
+```bash
+git submodule update --init --recursive
+```
+
+To add a new submodule on its `main` branch:
+
+```bash
+git submodule add -b main <submodule-repo-url> <path/to/submodule>
+git commit -m "Add <submodule-name> submodule"
+```
+
+Submodules are pinned by the parent repository to a specific commit. Even though
+`.gitmodules` can say `branch = main`, a normal clone checks out the recorded
+commit, which may appear as a detached `HEAD` inside the submodule directory.
+
+To update a submodule to the latest commit from its configured branch:
+
+```bash
+git submodule update --remote <path/to/submodule>
+git add <path/to/submodule>
+git commit -m "Update <submodule-name> submodule"
+```
+
+After that commit is pushed, future clones of this workspace will use the updated
+submodule commit.
+
 ## Prerequisites
 
 Linux development environment with:
