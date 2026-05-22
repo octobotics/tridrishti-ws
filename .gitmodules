@@ -1,0 +1,3 @@
+[submodule "src/i2w"]
+	path = src/i2w
+	url = https://github.com/octobotics/i2w.git
