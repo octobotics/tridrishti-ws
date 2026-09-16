@@ -11,7 +11,7 @@ source "${REPO_LIST}"
 mkdir -p "${SRC_DIR}"
 
 for repo in "${SRC_REPOS[@]}"; do
-  IFS='|' read -r name url _build_mode _launch_name _binary_rel _config_rel <<<"${repo}"
+  IFS='|' read -r name url _build_mode _launch_name _binary_rel _config_rel _shutdown_grace_sec <<<"${repo}"
   target="${SRC_DIR}/${name}"
 
   if [[ -d "${target}/.git" ]]; then

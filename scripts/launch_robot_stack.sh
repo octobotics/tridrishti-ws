@@ -14,9 +14,14 @@ SESSION_ID="${SESSION_ID:-$(date +%Y%m%d_%H%M%S)}"
 LOG_DIR="${LOG_DIR:-${LOG_BASE_DIR}/${SESSION_ID}}"
 I2W_ECAL_INSTALL_DIR="${I2W_ECAL_INSTALL_DIR:-${SRC_DIR}/i2w/build/third_party/ecal-install}"
 STARTUP_DELAY_SEC="${STARTUP_DELAY_SEC:-2}"
+HEALTH_MONITOR_SCRIPT="${HEALTH_MONITOR_SCRIPT:-${SCRIPT_DIR}/monitor_robot_health.sh}"
+HEALTH_MONITOR="${HEALTH_MONITOR:-1}"
+HEALTH_MONITOR_INTERVAL_SEC="${HEALTH_MONITOR_INTERVAL_SEC:-1}"
+health_monitor_pid=""
 
 pids=()
 names=()
+shutdown_graces=()
 show_logs=()
 launch_failures=()
 
@@ -39,11 +44,11 @@ env_or_default() {
 }
 
 launch_nodes_csv() {
-  local entry _repo _url _build_mode launch_name _binary_rel _config_rel
+  local entry _repo _url _build_mode launch_name _binary_rel _config_rel _shutdown_grace_sec
   local sep=""
 
   for entry in "${SRC_REPOS[@]}"; do
-    IFS='|' read -r _repo _url _build_mode launch_name _binary_rel _config_rel <<<"${entry}"
+    IFS='|' read -r _repo _url _build_mode launch_name _binary_rel _config_rel _shutdown_grace_sec <<<"${entry}"
     if [[ -n "${launch_name}" ]]; then
       printf '%s%s' "${sep}" "${launch_name}"
       sep=", "
@@ -53,7 +58,7 @@ launch_nodes_csv() {
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [--show-log NODE[,NODE...]]
+Usage: $(basename "$0") [--show-log NODE[,NODE...]] [--no-health-monitor]
 
 Launches all launchable nodes listed in:
   ${REPO_LIST}
@@ -65,6 +70,8 @@ Mirror selected logs to this terminal:
   --show-log ouster
   --show-log mip,dwe
   --show-log all
+  --no-health-monitor
+  --health-monitor-interval SECONDS
 
 Available node log names:
   $(launch_nodes_csv), all
@@ -80,6 +87,7 @@ Override paths with environment variables:
 For example:
   OUSTER_CONFIG=/path/config.json ./scripts/launch_robot_stack.sh
   MYACTUATOR_CONFIG= ./scripts/launch_robot_stack.sh
+  HEALTH_MONITOR=0 ./scripts/launch_robot_stack.sh
 
 Build first if binaries are missing:
   ./scripts/build_src_repos.sh
@@ -88,12 +96,12 @@ EOF
 
 is_launch_node() {
   local node="$1"
-  local entry _repo _url _build_mode launch_name _binary_rel _config_rel
+  local entry _repo _url _build_mode launch_name _binary_rel _config_rel _shutdown_grace_sec
 
   [[ "${node}" == "all" ]] && return 0
 
   for entry in "${SRC_REPOS[@]}"; do
-    IFS='|' read -r _repo _url _build_mode launch_name _binary_rel _config_rel <<<"${entry}"
+    IFS='|' read -r _repo _url _build_mode launch_name _binary_rel _config_rel _shutdown_grace_sec <<<"${entry}"
     if [[ "${launch_name}" == "${node}" ]]; then
       return 0
     fi
@@ -130,15 +138,47 @@ should_show_log() {
 
 stop_all() {
   local status="${1:-0}"
+  local i pid name grace
   trap - INT TERM EXIT
+  if [[ -n "${health_monitor_pid}" ]]; then
+    kill "${health_monitor_pid}" >/dev/null 2>&1 || true
+    wait "${health_monitor_pid}" >/dev/null 2>&1 || true
+  fi
   if [[ "${#pids[@]}" -gt 0 ]]; then
     echo "stopping robot stack..."
-    for pid in "${pids[@]}"; do
+    echo "shutdown order:"
+    for i in "${!pids[@]}"; do
+      pid="${pids[$i]}"
+      name="${names[$i]:-node}"
+      grace="${shutdown_graces[$i]:-0}"
+      if [[ -z "${pid}" ]]; then
+        echo "  ${name}: already exited, grace=${grace}s"
+      elif kill -0 "${pid}" >/dev/null 2>&1; then
+        echo "  ${name}: pid=${pid}, grace=${grace}s"
+      else
+        echo "  ${name}: already exited pid=${pid}, grace=${grace}s"
+      fi
+    done
+    for i in "${!pids[@]}"; do
+      pid="${pids[$i]}"
+      name="${names[$i]:-node}"
+      grace="${shutdown_graces[$i]:-0}"
       if [[ -z "${pid}" ]]; then
         continue
       fi
       if kill -0 "${pid}" >/dev/null 2>&1; then
-        kill "${pid}" >/dev/null 2>&1 || true
+        echo "kill ${name} pid=${pid}"
+        kill -- "-${pid}" >/dev/null 2>&1 || kill "${pid}" >/dev/null 2>&1 || true
+        echo "wait ${grace}s after ${name}"
+        if [[ "${grace}" != "0" ]]; then
+          sleep "${grace}"
+        fi
+      else
+        echo "skip ${name} pid=${pid} already exited"
+        echo "wait ${grace}s after ${name}"
+        if [[ "${grace}" != "0" ]]; then
+          sleep "${grace}"
+        fi
       fi
     done
     for pid in "${pids[@]}"; do
@@ -151,11 +191,34 @@ stop_all() {
   exit "${status}"
 }
 
+start_health_monitor() {
+  if [[ "${HEALTH_MONITOR}" != "1" ]]; then
+    echo "health monitor disabled"
+    return 0
+  fi
+  if [[ ! -x "${HEALTH_MONITOR_SCRIPT}" ]]; then
+    bold_red "WARNING: health monitor not started: missing executable ${HEALTH_MONITOR_SCRIPT}"
+    return 0
+  fi
+  echo "starting health monitor (interval: ${HEALTH_MONITOR_INTERVAL_SEC}s)"
+  mkdir -p "${LOG_DIR}/health"
+  LOG_DIR="${LOG_DIR}/health" INTERVAL_SEC="${HEALTH_MONITOR_INTERVAL_SEC}" \
+    "${HEALTH_MONITOR_SCRIPT}" > "${LOG_DIR}/health_monitor.log" 2>&1 &
+  health_monitor_pid="$!"
+}
+
+check_persistent_journal() {
+  if [[ ! -d /var/log/journal ]]; then
+    bold_red "WARNING: persistent journal is not enabled; run: sudo ${SCRIPT_DIR}/setup_persistent_journal.sh"
+  fi
+}
+
 start_process() {
   local name="$1"
   local workdir="$2"
   local bin="$3"
   local config="$4"
+  local shutdown_grace_sec="${5:-0}"
   local log_file="${LOG_DIR}/${name}.log"
 
   if [[ ! -d "${workdir}" ]]; then
@@ -189,30 +252,33 @@ start_process() {
 
   if should_show_log "${name}"; then
     (
+      trap '' INT
       cd "${workdir}"
       if [[ -n "${config}" ]]; then
-        exec "${bin}" "${config}"
+        exec setsid "${bin}" "${config}"
       else
-        exec "${bin}"
+        exec setsid "${bin}"
       fi
     ) > >(tee -a "${log_file}" | sed "s/^/[${name}] /") 2>&1 &
   else
     (
+      trap '' INT
       cd "${workdir}"
       if [[ -n "${config}" ]]; then
-        exec "${bin}" "${config}"
+        exec setsid "${bin}" "${config}"
       else
-        exec "${bin}"
+        exec setsid "${bin}"
       fi
     ) >"${log_file}" 2>&1 &
   fi
 
   pids+=("$!")
   names+=("${name}")
+  shutdown_graces+=("${shutdown_grace_sec}")
 }
 
 write_session_env() {
-  local entry repo _url _build_mode launch_name binary_rel config_rel
+  local entry repo _url _build_mode launch_name binary_rel config_rel shutdown_grace_sec
   local prefix dir_var bin_var config_var dir bin config
 
   {
@@ -220,7 +286,7 @@ write_session_env() {
     echo "started_at=$(date --iso-8601=seconds)"
     echo "root=${ROOT}"
     for entry in "${SRC_REPOS[@]}"; do
-      IFS='|' read -r repo _url _build_mode launch_name binary_rel config_rel <<<"${entry}"
+      IFS='|' read -r repo _url _build_mode launch_name binary_rel config_rel shutdown_grace_sec <<<"${entry}"
       if [[ -z "${launch_name}" ]]; then
         continue
       fi
@@ -239,17 +305,20 @@ write_session_env() {
 
       echo "${launch_name}_bin=${bin}"
       echo "${launch_name}_config=${config}"
+      echo "${launch_name}_shutdown_grace_sec=${shutdown_grace_sec:-0}"
     done
     echo "show_logs=${show_logs[*]:-}"
+    echo "health_monitor=${HEALTH_MONITOR}"
+    echo "health_monitor_interval_sec=${HEALTH_MONITOR_INTERVAL_SEC}"
   } >"${LOG_DIR}/session.env"
 }
 
 launch_all_nodes() {
-  local entry repo _url _build_mode launch_name binary_rel config_rel
+  local entry repo _url _build_mode launch_name binary_rel config_rel shutdown_grace_sec
   local prefix dir_var bin_var config_var dir bin config
 
   for entry in "${SRC_REPOS[@]}"; do
-    IFS='|' read -r repo _url _build_mode launch_name binary_rel config_rel <<<"${entry}"
+    IFS='|' read -r repo _url _build_mode launch_name binary_rel config_rel shutdown_grace_sec <<<"${entry}"
     if [[ -z "${launch_name}" ]]; then
       continue
     fi
@@ -266,7 +335,7 @@ launch_all_nodes() {
       config="$(env_or_default "${config_var}" "")"
     fi
 
-    start_process "${launch_name}" "${dir}" "${bin}" "${config}"
+    start_process "${launch_name}" "${dir}" "${bin}" "${config}" "${shutdown_grace_sec:-0}"
     sleep "${STARTUP_DELAY_SEC}"
   done
 }
@@ -288,6 +357,18 @@ while [[ "$#" -gt 0 ]]; do
     --show-log=*|--show-logs=*)
       add_show_logs "${1#*=}"
       shift
+      ;;
+    --no-health-monitor)
+      HEALTH_MONITOR=0
+      shift
+      ;;
+    --health-monitor-interval)
+      if [[ -z "${2:-}" ]]; then
+        echo "$1 requires a positive whole number of seconds" >&2
+        exit 2
+      fi
+      HEALTH_MONITOR_INTERVAL_SEC="$2"
+      shift 2
       ;;
     *)
       echo "unknown argument: $1" >&2
@@ -318,6 +399,8 @@ echo "logs: ${LOG_DIR}"
 if [[ "${#show_logs[@]}" -gt 0 ]]; then
   echo "mirroring logs: ${show_logs[*]}"
 fi
+check_persistent_journal
+start_health_monitor
 
 launch_all_nodes
 

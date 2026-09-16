@@ -53,7 +53,7 @@ print_known_repos() {
   local repo name
   echo -n "known repos:" >&2
   for repo in "${SRC_REPOS[@]}"; do
-    IFS='|' read -r name _url _build_mode _launch_name _binary_rel _config_rel <<<"${repo}"
+    IFS='|' read -r name _url _build_mode _launch_name _binary_rel _config_rel _shutdown_grace_sec <<<"${repo}"
     echo -n " ${name}" >&2
   done
   echo >&2
@@ -64,7 +64,7 @@ is_known_repo() {
   local entry known
 
   for entry in "${SRC_REPOS[@]}"; do
-    IFS='|' read -r known _url _build_mode _launch_name _binary_rel _config_rel <<<"${entry}"
+    IFS='|' read -r known _url _build_mode _launch_name _binary_rel _config_rel _shutdown_grace_sec <<<"${entry}"
     if [[ "${known}" == "${repo}" ]]; then
       return 0
     fi
@@ -126,7 +126,7 @@ done
 failures=()
 
 for repo in "${SRC_REPOS[@]}"; do
-  IFS='|' read -r name _url _build_mode _launch_name _binary_rel _config_rel <<<"${repo}"
+  IFS='|' read -r name _url _build_mode _launch_name _binary_rel _config_rel _shutdown_grace_sec <<<"${repo}"
 
   if ! has_selected_repo "${name}"; then
     continue
