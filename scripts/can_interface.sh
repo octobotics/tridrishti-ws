@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-CAN_IFACE="${CAN_IFACE:-can0}"
+# The robot controller is wired to can1. Override this for a bench adapter,
+# for example: CAN_IFACE=can0 ./scripts/can_interface.sh up.
+CAN_IFACE="${CAN_IFACE:-can1}"
 CAN_BITRATE="${CAN_BITRATE:-1000000}"
 CAN_RESTART_MS="${CAN_RESTART_MS:-100}"
 
@@ -10,7 +12,7 @@ usage() {
 Usage: $(basename "$0") up|down|restart|status
 
 Environment:
-  CAN_IFACE=can0
+  CAN_IFACE=can1
   CAN_BITRATE=1000000
   CAN_RESTART_MS=100
 

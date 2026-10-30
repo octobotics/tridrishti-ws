@@ -1,0 +1,14 @@
+node,host,process_id
+ouster_lidar_pub,tridrishti-jetson,9550
+mip_i2w,tridrishti-jetson,9656
+attitude_correction_i2w,tridrishti-jetson,9676
+mission_planner_i2w,tridrishti-jetson,9693
+dwe_cam_gst_i2w,tridrishti-jetson,9710
+robot_tf_static_i2w,tridrishti-jetson,9723
+robot-ui-sync,tridrishti-jetson,9738
+local_ekf_i2w,tridrishti-jetson,9763
+tank_localization_i2w,tridrishti-jetson,9785
+robotMcu,tridrishti-jetson,9822
+myActuatorNode,tridrishti-jetson,9894
+stm_node,tridrishti-jetson,9965
+joy_network_to_local,tridrishti-jetson,21714

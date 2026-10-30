@@ -13,10 +13,22 @@ LOG_BASE_DIR="${LOG_BASE_DIR:-${ROOT}/logs/robot}"
 SESSION_ID="${SESSION_ID:-$(date +%Y%m%d_%H%M%S)}"
 LOG_DIR="${LOG_DIR:-${LOG_BASE_DIR}/${SESSION_ID}}"
 I2W_ECAL_INSTALL_DIR="${I2W_ECAL_INSTALL_DIR:-${SRC_DIR}/i2w/build/third_party/ecal-install}"
-STARTUP_DELAY_SEC="${STARTUP_DELAY_SEC:-2}"
+# Nodes are independent eCAL participants; keep a small stagger to make their
+# log start-up readable without adding the former multi-second stack delay.
+# Set STARTUP_DELAY_SEC=0 to launch them back-to-back if required.
+STARTUP_DELAY_SEC="${STARTUP_DELAY_SEC:-0.1}"
 HEALTH_MONITOR_SCRIPT="${HEALTH_MONITOR_SCRIPT:-${SCRIPT_DIR}/monitor_robot_health.sh}"
+STOP_NODES_SCRIPT="${STOP_NODES_SCRIPT:-${SCRIPT_DIR}/stop_robot_nodes.sh}"
+CAN_INTERFACE_SCRIPT="${CAN_INTERFACE_SCRIPT:-${SCRIPT_DIR}/can_interface.sh}"
+CAN_IFACE="${CAN_IFACE:-can1}"
+CAN_BITRATE="${CAN_BITRATE:-1000000}"
+export CAN_IFACE CAN_BITRATE
 HEALTH_MONITOR="${HEALTH_MONITOR:-1}"
 HEALTH_MONITOR_INTERVAL_SEC="${HEALTH_MONITOR_INTERVAL_SEC:-1}"
+# A clean launch must not leave a previous stack publishing or serving stale
+# eCAL endpoints. CAN is brought up before the controller node is started.
+STOP_EXISTING_NODES="${STOP_EXISTING_NODES:-1}"
+CAN_UP="${CAN_UP:-1}"
 health_monitor_pid=""
 
 pids=()
@@ -58,7 +70,7 @@ launch_nodes_csv() {
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [--show-log NODE[,NODE...]] [--no-health-monitor]
+Usage: $(basename "$0") [OPTIONS]
 
 Launches all launchable nodes listed in:
   ${REPO_LIST}
@@ -72,6 +84,8 @@ Mirror selected logs to this terminal:
   --show-log all
   --no-health-monitor
   --health-monitor-interval SECONDS
+  --no-stop-existing
+  --no-can-up
 
 Available node log names:
   $(launch_nodes_csv), all
@@ -88,6 +102,11 @@ For example:
   OUSTER_CONFIG=/path/config.json ./scripts/launch_robot_stack.sh
   MYACTUATOR_CONFIG= ./scripts/launch_robot_stack.sh
   HEALTH_MONITOR=0 ./scripts/launch_robot_stack.sh
+  TANK_LIDAR_DIAGNOSTIC_CSV= ./scripts/launch_robot_stack.sh  # disable CSV
+  TANK_HEADING_DIAGNOSTIC_CSV= ./scripts/launch_robot_stack.sh  # disable heading CSV
+  OUSTER_KISS_DIAGNOSTIC_CSV= ./scripts/launch_robot_stack.sh  # disable KISS CSV
+  STARTUP_DELAY_SEC=0 ./scripts/launch_robot_stack.sh           # no inter-node delay
+  STOP_EXISTING_NODES=0 CAN_UP=0 ./scripts/launch_robot_stack.sh
 
 Build first if binaries are missing:
   ./scripts/build_src_repos.sh
@@ -213,6 +232,30 @@ check_persistent_journal() {
   fi
 }
 
+prepare_robot_runtime() {
+  if [[ "${STOP_EXISTING_NODES}" == "1" ]]; then
+    if [[ ! -x "${STOP_NODES_SCRIPT}" ]]; then
+      bold_red "ERROR: stop-nodes script is missing or not executable: ${STOP_NODES_SCRIPT}"
+      return 1
+    fi
+    echo "stopping any previously launched robot nodes"
+    "${STOP_NODES_SCRIPT}" all
+  else
+    echo "previous-node stop disabled"
+  fi
+
+  if [[ "${CAN_UP}" == "1" ]]; then
+    if [[ ! -x "${CAN_INTERFACE_SCRIPT}" ]]; then
+      bold_red "ERROR: CAN interface script is missing or not executable: ${CAN_INTERFACE_SCRIPT}"
+      return 1
+    fi
+    echo "bringing CAN interface up (${CAN_IFACE}, ${CAN_BITRATE} bit/s)"
+    "${CAN_INTERFACE_SCRIPT}" up
+  else
+    echo "CAN interface setup disabled"
+  fi
+}
+
 start_process() {
   local name="$1"
   local workdir="$2"
@@ -248,12 +291,24 @@ start_process() {
   fi
   echo "  log:    ${log_file}"
 
+  if [[ "${name}" == "ouster" && -n "${config}" ]]; then
+    cp -- "${config}" "${LOG_DIR}/ouster_config_used.json"
+  fi
+
   : >"${log_file}"
 
   if should_show_log "${name}"; then
     (
       trap '' INT
       cd "${workdir}"
+      if [[ "${name}" == "tank_localization" ]]; then
+        export TANK_LIDAR_DIAGNOSTIC_CSV="${TANK_LIDAR_DIAGNOSTIC_CSV-${LOG_DIR}/tank_lidar_diagnostic.csv}"
+        export TANK_HEADING_DIAGNOSTIC_CSV="${TANK_HEADING_DIAGNOSTIC_CSV-${LOG_DIR}/tank_heading_diagnostic.csv}"
+      fi
+      if [[ "${name}" == "ouster" ]]; then
+        export OUSTER_KISS_DIAGNOSTIC_CSV="${OUSTER_KISS_DIAGNOSTIC_CSV-${LOG_DIR}/ouster_kiss_registration.csv}"
+        export OUSTER_METADATA_JSON="${OUSTER_METADATA_JSON-${LOG_DIR}/ouster_metadata.json}"
+      fi
       if [[ -n "${config}" ]]; then
         exec setsid "${bin}" "${config}"
       else
@@ -264,6 +319,14 @@ start_process() {
     (
       trap '' INT
       cd "${workdir}"
+      if [[ "${name}" == "tank_localization" ]]; then
+        export TANK_LIDAR_DIAGNOSTIC_CSV="${TANK_LIDAR_DIAGNOSTIC_CSV-${LOG_DIR}/tank_lidar_diagnostic.csv}"
+        export TANK_HEADING_DIAGNOSTIC_CSV="${TANK_HEADING_DIAGNOSTIC_CSV-${LOG_DIR}/tank_heading_diagnostic.csv}"
+      fi
+      if [[ "${name}" == "ouster" ]]; then
+        export OUSTER_KISS_DIAGNOSTIC_CSV="${OUSTER_KISS_DIAGNOSTIC_CSV-${LOG_DIR}/ouster_kiss_registration.csv}"
+        export OUSTER_METADATA_JSON="${OUSTER_METADATA_JSON-${LOG_DIR}/ouster_metadata.json}"
+      fi
       if [[ -n "${config}" ]]; then
         exec setsid "${bin}" "${config}"
       else
@@ -310,6 +373,8 @@ write_session_env() {
     echo "show_logs=${show_logs[*]:-}"
     echo "health_monitor=${HEALTH_MONITOR}"
     echo "health_monitor_interval_sec=${HEALTH_MONITOR_INTERVAL_SEC}"
+    echo "ouster_kiss_diagnostic_csv=${OUSTER_KISS_DIAGNOSTIC_CSV-${LOG_DIR}/ouster_kiss_registration.csv}"
+    echo "ouster_metadata_json=${OUSTER_METADATA_JSON-${LOG_DIR}/ouster_metadata.json}"
   } >"${LOG_DIR}/session.env"
 }
 
@@ -362,6 +427,14 @@ while [[ "$#" -gt 0 ]]; do
       HEALTH_MONITOR=0
       shift
       ;;
+    --no-stop-existing)
+      STOP_EXISTING_NODES=0
+      shift
+      ;;
+    --no-can-up)
+      CAN_UP=0
+      shift
+      ;;
     --health-monitor-interval)
       if [[ -z "${2:-}" ]]; then
         echo "$1 requires a positive whole number of seconds" >&2
@@ -399,6 +472,7 @@ echo "logs: ${LOG_DIR}"
 if [[ "${#show_logs[@]}" -gt 0 ]]; then
   echo "mirroring logs: ${show_logs[*]}"
 fi
+prepare_robot_runtime
 check_persistent_journal
 start_health_monitor
 
@@ -424,8 +498,12 @@ while true; do
       continue
     fi
     if ! kill -0 "${pid}" >/dev/null 2>&1; then
-      bold_red "process exited: ${names[$i]} pid=${pid}"
-      wait "${pid}" >/dev/null 2>&1 || true
+      if wait "${pid}" >/dev/null 2>&1; then
+        exit_status=0
+      else
+        exit_status=$?
+      fi
+      bold_red "process exited: ${names[$i]} pid=${pid} status=${exit_status}"
       pids[$i]=""
       continue
     fi

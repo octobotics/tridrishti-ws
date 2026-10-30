@@ -5,12 +5,13 @@ set -Eeuo pipefail
 INTERFACE="enP1p1s0"
 PROFILE="robot-network-mode"
 
-INTER_DEVICE_ADDRESS="10.0.0.1/24"
+INTER_DEVICE_ADDRESS="10.0.0.1"
 INTER_DEVICE_PEER="10.0.0.2"
 
-NORMAL_ADDRESS="192.168.0.10/24"
+
+NORMAL_ADDRESS="192.168.0.10"
 NORMAL_GATEWAY="192.168.0.1"
-NORMAL_DNS="192.168.0.1,1.1.1.1"
+NORMAL_DNS="192.168.0.1,8.8.8.8,1.1.1.1"
 
 MULTICAST_ROUTE="224.0.0.0/4"
 MULTICAST_TEST_ADDRESS="239.0.0.1"
@@ -20,11 +21,11 @@ usage() {
     cat <<EOF
 Usage: $(basename "$0") [MODE]
 
-Default: inter-device (10.0.0.1/24)
+Default: inter-device ($INTER_DEVICE_ADDRESS/24)
 
 Modes:
-  inter-device  Set $INTERFACE to 10.0.0.1/24; peer device is 10.0.0.2/24
-  normal        Set $INTERFACE to 192.168.0.10/24 with gateway 192.168.0.1
+  inter-device  Set $INTERFACE to $INTER_DEVICE_ADDRESS/24; peer device is $INTER_DEVICE_PEER
+  normal        Set $INTERFACE to $NORMAL_ADDRESS/24 with gateway $NORMAL_GATEWAY
   toggle        Switch between inter-device and normal mode
   status        Show the current mode, routes and NetworkManager state
   help          Show this help
@@ -100,7 +101,7 @@ set_inter_device() {
 
     nmcli connection modify "$PROFILE" \
         ipv4.method manual \
-        ipv4.addresses "$INTER_DEVICE_ADDRESS" \
+        ipv4.addresses "$INTER_DEVICE_ADDRESS/24" \
         ipv4.gateway "" \
         ipv4.dns "" \
         ipv4.never-default yes \
@@ -111,7 +112,7 @@ set_inter_device() {
 
     printf '\nInter-device mode active:\n'
     printf '  Interface: %s\n' "$INTERFACE"
-    printf '  Address:   %s\n' "$INTER_DEVICE_ADDRESS"
+    printf '  Address:   %s\n' "$INTER_DEVICE_ADDRESS/24"
     printf '  Peer:      %s/24\n' "$INTER_DEVICE_PEER"
 }
 
@@ -120,7 +121,7 @@ set_normal() {
 
     nmcli connection modify "$PROFILE" \
         ipv4.method manual \
-        ipv4.addresses "$NORMAL_ADDRESS" \
+        ipv4.addresses "$NORMAL_ADDRESS/24" \
         ipv4.gateway "$NORMAL_GATEWAY" \
         ipv4.dns "$NORMAL_DNS" \
         ipv4.never-default no \
@@ -131,7 +132,7 @@ set_normal() {
 
     printf '\nNormal mode active:\n'
     printf '  Interface: %s\n' "$INTERFACE"
-    printf '  Address:   %s\n' "$NORMAL_ADDRESS"
+    printf '  Address:   %s\n' "$NORMAL_ADDRESS/24"
     printf '  Gateway:   %s\n' "$NORMAL_GATEWAY"
 }
 
@@ -150,8 +151,8 @@ show_status() {
     )"
 
     case "$address" in
-        10.0.0.1)     mode="inter-device" ;;
-        192.168.0.10) mode="normal" ;;
+        $INTER_DEVICE_ADDRESS)     mode="inter-device" ;;
+        $NORMAL_ADDRESS) mode="normal" ;;
         "")           mode="unconfigured" ;;
         *)            mode="other" ;;
     esac
@@ -184,7 +185,7 @@ main() {
         toggle)
             require_root "$@"
 
-            if [[ "$(current_address || true)" == "10.0.0.1" ]]; then
+            if [[ "$(current_address || true)" == $INTER_DEVICE_ADDRESS ]]; then
                 set_normal
             else
                 set_inter_device
