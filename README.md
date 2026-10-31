@@ -162,11 +162,10 @@ the PC's address in the active mode.
 
 ## View package changes in VS Code
 
-This workspace has a root `.git` directory, while packages such as
-`src/mip-i2w` and `src/ouster-lidar-pub` each have their **own** `.git`
-directory. The root repository tracks those packages as Git links, so its
-Source Control entry can show only a package-level change instead of the
-individual files changed inside that package.
+The workspace repository tracks only `src/README.md` under `src/`. Packages
+such as `src/mip-i2w` and `src/ouster-lidar-pub` have their **own** Git
+repositories. Clone them with the script above; they are not included in the
+workspace repository.
 
 In VS Code, open **Source Control → Repositories** and select the package
 repository whose changes you want to inspect. VS Code can display multiple

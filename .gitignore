@@ -16,6 +16,10 @@ sdks/*
 !sdks/README.md
 /sdks.zip
 
+# Source packages are cloned and versioned in their own repositories.
+/src/*
+!/src/README.md
+
 # CLion
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
 #  be found at https://github.com/github/gitignore/blob/main/Global/JetBrains.gitignore
