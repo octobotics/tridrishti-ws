@@ -1,7 +1,7 @@
 # Dependencies for the robot stack
 
-Workspace changes and commits require prior approval from **Hrithik
-Dhongadi**. See the [maintenance policy](../README.md#maintenance-and-approval).
+Please get **Hrithik Dhongadi**'s approval before changing files or making
+commits. See [Working in this workspace](../README.md#working-in-this-workspace).
 
 This page covers the packages in [`scripts/src_repos.sh`](../scripts/src_repos.sh)
 on the Ubuntu/Jetson (`aarch64`) workspace. Run commands from the workspace

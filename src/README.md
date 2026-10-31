@@ -1,7 +1,7 @@
 # Robot stack repositories
 
-Workspace changes and commits require prior approval from **Hrithik
-Dhongadi**. See the [maintenance policy](../README.md#maintenance-and-approval).
+Please get **Hrithik Dhongadi**'s approval before changing files or making
+commits. See [Working in this workspace](../README.md#working-in-this-workspace).
 
 The robot stack uses the repositories below under `src/`. The authoritative
 list, including clone URLs, build order, binaries, and config paths, is

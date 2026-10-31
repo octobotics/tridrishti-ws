@@ -1,17 +1,15 @@
-# TriDrishti robot workspace
-
-## Maintenance and approval
-
-This workspace is maintained exclusively by **Hrithik Dhongadi**. Obtain his
-explicit approval **before making any changes or creating any commits** in
-this workspace. This applies to source repositories, SDKs, scripts,
-configuration, and documentation. A change or commit without the maintainer's
-prior approval is not permitted.
+# Tridrishti Robot Workspace
 
 This workspace builds and runs the TriDrishti robot stack on the Ubuntu/Jetson
 host. Run the commands below from the workspace root (`~/tridrishti_ws`). The
 current package list and launch order are defined in
 [`scripts/src_repos.sh`](scripts/src_repos.sh).
+
+## Working in this workspace
+
+**Hrithik Dhongadi** maintains this workspace. Please get his approval before
+changing files or making commits, including changes to source repositories,
+SDKs, scripts, configuration, and documentation.
 
 | Directory | What it contains |
 | --- | --- |

@@ -1,7 +1,7 @@
 # Robot workspace scripts
 
-Workspace changes and commits require prior approval from **Hrithik
-Dhongadi**. See the [maintenance policy](../README.md#maintenance-and-approval).
+Please get **Hrithik Dhongadi**'s approval before changing files or making
+commits. See [Working in this workspace](../README.md#working-in-this-workspace).
 
 Run these commands from the workspace root (`~/tridrishti_ws`). The robot
 packages live in `src/`; [src_repos.sh](src_repos.sh) lists which packages the
