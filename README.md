@@ -1,160 +1,162 @@
-# Tridrishti Workspace
+# TriDrishti robot workspace
 
-`tridrishti-ws` is the development workspace for Tridrishti components, SDK notes,
-and `i2w` nodes. The main code currently lives in `src/i2w`, a C++20 wrapper around
-`iceoryx2-cxx` for passive runtime pub/sub, service-style communication, monotonic
-time, and wrapper-owned diagnostics.
+This workspace builds and runs the TriDrishti robot stack on the Ubuntu/Jetson
+host. Run the commands below from the workspace root (`~/tridrishti_ws`). The
+current package list and launch order are defined in
+[`scripts/src_repos.sh`](scripts/src_repos.sh).
 
-## Workspace Layout
+| Directory | What it contains |
+| --- | --- |
+| [`src/`](src/README.md) | Robot node repositories and shared message/runtime packages |
+| [`sdks/`](sdks/README.md) | C++ SDK source, a Jetson CMake binary, and dependency instructions |
+| [`scripts/`](scripts/README.md) | Clone, build, launch, service, network, and troubleshooting scripts |
+| `utils/logger/` | Logger source required by the controller, motor, and STM nodes |
+| `logs/robot/` | Per-run node logs created by the launcher |
 
-```text
-.
-├── README.md                 # Workspace overview
-├── sdks/
-│   └── SdksCloneDetail.md    # External SDKs tracked for the project
-└── src/
-    ├── Detail.md             # Notes for organizing i2w nodes
-    └── i2w/                  # C++20 iceoryx2 wrapper library and examples
-```
+## Set up a new workspace
 
-Important `i2w` paths:
+### 1. Install GitHub CLI and authenticate
 
-- `src/i2w/include/i2w/` - public headers
-- `src/i2w/src/` - library implementation
-- `src/i2w/examples/pubsub/` - standalone pub/sub example project
-- `src/i2w/scripts/build.sh` - library build script
-- `src/i2w/DESIGN.md` - runtime and API design notes
-- `src/i2w/docs/` - additional development documentation
-
-## Submodule Management
-
-This workspace can track external repositories as Git submodules. Submodules keep
-third-party or separately maintained code in its own repository while pinning this
-workspace to a known-good commit.
-
-Clone the workspace with submodules:
+The source clone script uses HTTPS GitHub URLs. Install `git` and GitHub CLI
+(`gh`) using the instructions in [src/README.md](src/README.md#install-github-cli-and-sign-in),
+then sign in **as the normal user who will clone the repositories**:
 
 ```bash
-git clone --recurse-submodules <repo-url>
+gh auth login --hostname github.com --git-protocol https
+gh auth setup-git
+gh auth status
 ```
 
-If the workspace was cloned without submodules, initialize them later:
+Use an account with access to the `octobotics` repositories. On a headless
+Jetson, complete the device-code login in a browser on your PC. The command is
+`gh auth login` (not `git auth login`); do not run it with `sudo`.
+
+### 2. Install build dependencies and SDKs
+
+Follow [sdks/README.md](sdks/README.md) to install the Ubuntu development
+packages and check the SDK revisions. For the standard ARM64 Jetson layout,
+you can download the [prebuilt SDK archive from WorkDrive](https://workdrive.zoho.in/file/xlryl18e2b7e83bb949c0bba8ec0a2879bdb3),
+save it as `sdks.zip` in the workspace root, and follow the
+[archive extraction steps](sdks/README.md#arm64-sdk-archive-quick-setup).
+The archive is not committed to this workspace. Otherwise, follow the SDK
+source clone and Ouster build steps in `sdks/README.md`. The main SDK
+versions verified in this workspace are:
+
+| Dependency | Version / local revision | Required by |
+| --- | --- | --- |
+| Ouster C++ SDK | 0.16.1 / `409b452` | Ouster LiDAR publisher |
+| MIP SDK | 4.0.0 / `212583c` | MIP IMU node |
+| KISS-ICP | 1.3.0 / `1ffa7d7` | LiDAR odometry |
+| myactuator_rmd | CMake project 0.0.1 / `c43980c` | Drive motor node |
+| CMake for Jetson | 3.25.3 | `i2w`/eCAL build |
+
+Keep these source folders at their documented paths under `sdks/`. The
+Ouster SDK must be built first so
+`sdks/ouster-sdk/build/OusterSDKConfig.cmake` and its static libraries exist.
+MIP SDK, KISS-ICP, and myactuator_rmd are built within their consuming node
+builds. Also ensure `utils/logger/CMakeLists.txt` exists; its clone command is
+in [sdks/README.md](sdks/README.md#4-other-required-source-outside-sdks).
+For a full development workspace, also keep the recommended Aravis,
+scanCONTROL, ImGui, FreeType, RS-485, and USB-CAN folders under `sdks/` for
+additional repositories that may be cloned later. Their exact folder names
+are in [sdks/README.md](sdks/README.md#recommended-sdk-folders-for-additional-workspace-repositories).
+
+### 3. Clone the robot packages
+
+The stack uses these repositories under `src/`:
+
+| Area | Repositories |
+| --- | --- |
+| Shared foundations | `i2w`, `crawler-i2w-msgs` |
+| Sensors and transforms | `ouster-lidar-pub`, `mip-i2w`, `dwe-cam-gst-i2w`, `robot-tf-static-i2w` |
+| Localization | `attitude-correction-i2w`, `local-ekf-i2w`, `tank-localization-i2w` |
+| Mission and UI | `mission-planner-i2w`, `robot-ui-sync` |
+| Hardware control | `TriDrishti-ControllerNode`, `TriDrishti-MyActuator-CPF`, `TriDrishti-STMHALNode` |
 
 ```bash
-git submodule update --init --recursive
+./scripts/clone_src_repos.sh
 ```
 
-To add a new submodule on its `main` branch:
+The clone script skips existing repositories; it does not update them. Use
+[`scripts/pull_src_repos.sh`](scripts/pull_src_repos.sh) for existing checkouts.
+See [src/README.md](src/README.md) for the complete repository list.
+
+### 4. Check the robot configuration
+
+Before starting the stack or enabling boot startup:
+
+1. Review the node `config/config.json` files referenced by
+   [`scripts/src_repos.sh`](scripts/src_repos.sh). Check sensor addresses,
+   device ports, mission settings, and the real Ouster address if the config
+   was previously changed for replay or mock testing.
+2. Check the robot's Ethernet mode with
+   `./scripts/toggle_network_interface.sh status`.
+3. In the controller's
+   [`isConnected()` function](src/TriDrishti-ControllerNode/src/i2wControllerNode.cpp),
+   set `host` to the **controlling PC's IP**: `10.0.0.2` for a direct cable, or
+   the PC's actual address on the router/Wi-Fi network. Rebuild the controller
+   after changing this source value.
+
+The detailed [pre-start checklist and network recovery steps](scripts/README.md#robot-startup)
+are in `scripts/README.md`.
+
+### 5. Build the robot packages
 
 ```bash
-git submodule add -b main <submodule-repo-url> <path/to/submodule>
-git commit -m "Add <submodule-name> submodule"
+./scripts/build_src_repos.sh
 ```
 
-Submodules are pinned by the parent repository to a specific commit. Even though
-`.gitmodules` can say `branch = main`, a normal clone checks out the recorded
-commit, which may appear as a detached `HEAD` inside the submodule directory.
+The build script uses the order in `scripts/src_repos.sh` and automatically
+prefers the matching CMake binary under `sdks/`. On a clean build, `i2w` also
+downloads its pinned eCAL checkout and DataTamer source, so network access is
+needed.
 
-To update a submodule to the latest commit from its configured branch:
+## Start and monitor the robot
+
+For automatic startup at boot, install the service once after building and
+checking the configuration:
 
 ```bash
-git submodule update --remote <path/to/submodule>
-git add <path/to/submodule>
-git commit -m "Update <submodule-name> submodule"
+sudo ./scripts/install_robot_stack_service.sh
+systemctl status tridrishti-robot-stack.service
+journalctl -u tridrishti-robot-stack.service -b -f
 ```
 
-After that commit is pushed, future clones of this workspace will use the updated
-submodule commit.
+The installer enables the service for the next boot. Add `--start` to the
+install command to start it immediately. The service runs
+[`launch_robot_stack.sh`](scripts/launch_robot_stack.sh) as root, including its
+CAN setup. See [robot_stack_service.md](scripts/robot_stack_service.md) for
+service control, preview, and uninstall commands.
 
-## Prerequisites
-
-Linux development environment with:
-
-- CMake 3.22 or newer
-- C++20 compiler
-- `git`
-- Rust toolchain with `cargo` and `rustc`
-
-The `i2w` build uses a vendored `iceoryx2` checkout under
-`src/i2w/third_party/iceoryx2`. The build script can clone and pin this dependency
-for you.
-
-## Build `i2w`
-
-From the workspace root:
+For a manual run, stop the boot service first so two stacks do not run at
+once:
 
 ```bash
-cd src/i2w
-./scripts/build.sh
+sudo systemctl stop tridrishti-robot-stack.service
+sudo ./scripts/launch_robot_stack.sh --show-log all
 ```
 
-Useful build overrides:
+Press Ctrl-C to stop a manual run. The launcher writes each node's output to
+`logs/robot/<YYYYMMDD_HHMMSS>/<node>.log` and its selected paths to
+`session.env`. A running service only confirms that the launcher is active;
+check the node logs and sensor/motor telemetry to confirm the robot is ready.
 
-```bash
-BUILD_TYPE=Release ./scripts/build.sh
-I2W_BUILD_DIR=/abs/path/to/build ./scripts/build.sh
-I2W_ICEORYX2_SOURCE_DIR=/abs/path/to/iceoryx2 ./scripts/build.sh
-```
+## Robot-to-PC network modes
 
-## Run the Pub/Sub Example
+| Mode | Robot IP | Controlling PC IP |
+| --- | --- | --- |
+| Direct cable (`inter-device`) | `10.0.0.1` | `10.0.0.2` |
+| Router (`normal`) | `192.168.0.10` | The PC's assigned address on that network |
 
-Build the standalone example:
+If the robot is on the other address range, follow the
+[Ethernet recovery procedure](scripts/README.md#troubleshooting-robot-ethernet-access)
+to reach it, switch modes, and update the PC's IPv4 settings. That guide also
+includes screenshots. The controller's `isConnected()` ping target must match
+the PC's address in the active mode.
 
-```bash
-cd src/i2w/examples/pubsub
-./scripts/build.sh
-```
+## Detailed guides
 
-Run the demo launcher:
-
-```bash
-./scripts/run_demo_pubsub.sh
-```
-
-Or run the processes in separate terminals:
-
-```bash
-./scripts/run_sub.sh
-./scripts/run_error_sub.sh
-./scripts/run_pub.sh
-```
-
-The example builds:
-
-- `i2w_example_pub`
-- `i2w_example_sub`
-- `i2w_example_error_sub`
-
-## Using `i2w` From Another CMake Target
-
-`i2w` is intended to be consumed from source:
-
-```cmake
-add_subdirectory(path/to/i2w)
-target_link_libraries(your_target PRIVATE i2w::i2w)
-```
-
-See `src/i2w/examples/pubsub` for a complete standalone consumer.
-
-## SDK Notes
-
-SDK clone/reference notes are tracked in `sdks/SdksCloneDetail.md`. Current SDK
-references include:
-
-- HBK MicroStrain MIP SDK
-- KISS-ICP
-- Ouster SDK
-
-## Adding New Nodes
-
-Place new i2w nodes under `src/`. Each node should include its own README or detail
-page covering:
-
-- Purpose and responsibilities
-- Build and run instructions
-- Topics, services, and message types
-- Required SDKs or hardware dependencies
-- Diagnostics and known error codes
-
-Keep shared runtime functionality inside `src/i2w` and node-specific behavior inside
-the node directory.
+- [Source repositories and GitHub login](src/README.md)
+- [SDK and Ubuntu build dependencies](sdks/README.md)
+- [Script index, startup, and network troubleshooting](scripts/README.md)
+- [Boot service installation and removal](scripts/robot_stack_service.md)
