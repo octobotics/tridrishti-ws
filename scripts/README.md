@@ -1,5 +1,8 @@
 # Robot workspace scripts
 
+Workspace changes and commits require prior approval from **Hrithik
+Dhongadi**. See the [maintenance policy](../README.md#maintenance-and-approval).
+
 Run these commands from the workspace root (`~/tridrishti_ws`). The robot
 packages live in `src/`; [src_repos.sh](src_repos.sh) lists which packages the
 scripts build and launch, their order, binary paths, configs, and shutdown

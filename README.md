@@ -1,5 +1,13 @@
 # TriDrishti robot workspace
 
+## Maintenance and approval
+
+This workspace is maintained exclusively by **Hrithik Dhongadi**. Obtain his
+explicit approval **before making any changes or creating any commits** in
+this workspace. This applies to source repositories, SDKs, scripts,
+configuration, and documentation. A change or commit without the maintainer's
+prior approval is not permitted.
+
 This workspace builds and runs the TriDrishti robot stack on the Ubuntu/Jetson
 host. Run the commands below from the workspace root (`~/tridrishti_ws`). The
 current package list and launch order are defined in
@@ -153,6 +161,41 @@ If the robot is on the other address range, follow the
 to reach it, switch modes, and update the PC's IPv4 settings. That guide also
 includes screenshots. The controller's `isConnected()` ping target must match
 the PC's address in the active mode.
+
+## View package changes in VS Code
+
+This workspace has a root `.git` directory, while packages such as
+`src/mip-i2w` and `src/ouster-lidar-pub` each have their **own** `.git`
+directory. The root repository tracks those packages as Git links, so its
+Source Control entry can show only a package-level change instead of the
+individual files changed inside that package.
+
+In VS Code, open **Source Control → Repositories** and select the package
+repository whose changes you want to inspect. VS Code can display multiple
+repositories in one workspace; see its [Repositories view guide](https://code.visualstudio.com/docs/sourcecontrol/repos-remotes#_working-with-repositories).
+
+If the root repository still gets in the way, you can **rename the workspace
+root's `.git` directory** from the workspace root and reload the VS Code
+window:
+
+```bash
+cd ~/tridrishti_ws
+mv .git .git-root-backup
+```
+
+VS Code can then detect the separate repositories under `src/`. This does not
+rename or remove any package's own `.git`. To restore the root repository:
+
+```bash
+cd ~/tridrishti_ws
+mv .git-root-backup .git
+```
+
+Check that the backup name does not already exist before renaming. Deleting
+the root `.git` directory is also possible, but it discards the root
+repository's local history and configuration; use the reversible rename when
+you only want to change the VS Code view. Follow the maintenance approval rule
+above before changing workspace Git metadata or committing in any repository.
 
 ## Detailed guides
 
