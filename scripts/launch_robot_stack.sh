@@ -23,6 +23,11 @@ CAN_INTERFACE_SCRIPT="${CAN_INTERFACE_SCRIPT:-${SCRIPT_DIR}/can_interface.sh}"
 CAN_IFACE="${CAN_IFACE:-can1}"
 CAN_BITRATE="${CAN_BITRATE:-1000000}"
 export CAN_IFACE CAN_BITRATE
+# eCAL network endpoints must be created after the robot Ethernet route exists.
+# Keep this wait inside the UI sync child so local robot nodes can start offline.
+UI_SYNC_NETWORK_IFACE="${UI_SYNC_NETWORK_IFACE:-enP1p1s0}"
+UI_SYNC_MULTICAST_ADDRESS="${UI_SYNC_MULTICAST_ADDRESS:-239.0.0.1}"
+UI_SYNC_WAIT_FOR_NETWORK="${UI_SYNC_WAIT_FOR_NETWORK:-1}"
 HEALTH_MONITOR="${HEALTH_MONITOR:-1}"
 HEALTH_MONITOR_INTERVAL_SEC="${HEALTH_MONITOR_INTERVAL_SEC:-1}"
 # A clean launch must not leave a previous stack publishing or serving stale
@@ -256,6 +261,25 @@ prepare_robot_runtime() {
   fi
 }
 
+wait_for_ui_sync_network() {
+  local route
+  [[ "${UI_SYNC_WAIT_FOR_NETWORK}" == "1" ]] || return 0
+
+  echo "waiting for UI network on ${UI_SYNC_NETWORK_IFACE} (multicast ${UI_SYNC_MULTICAST_ADDRESS})"
+  while true; do
+    if [[ -r "/sys/class/net/${UI_SYNC_NETWORK_IFACE}/carrier" ]] &&
+       [[ "$(cat "/sys/class/net/${UI_SYNC_NETWORK_IFACE}/carrier" 2>/dev/null)" == "1" ]] &&
+       ip -4 -o address show dev "${UI_SYNC_NETWORK_IFACE}" scope global 2>/dev/null | grep -q .; then
+      route="$(ip -4 route get "${UI_SYNC_MULTICAST_ADDRESS}" 2>/dev/null || true)"
+      if [[ " ${route} " == *" dev ${UI_SYNC_NETWORK_IFACE} "* ]]; then
+        echo "UI network ready: ${route}"
+        return 0
+      fi
+    fi
+    sleep 2
+  done
+}
+
 start_process() {
   local name="$1"
   local workdir="$2"
@@ -309,6 +333,9 @@ start_process() {
         export OUSTER_KISS_DIAGNOSTIC_CSV="${OUSTER_KISS_DIAGNOSTIC_CSV-${LOG_DIR}/ouster_kiss_registration.csv}"
         export OUSTER_METADATA_JSON="${OUSTER_METADATA_JSON-${LOG_DIR}/ouster_metadata.json}"
       fi
+      if [[ "${name}" == "robot_ui_sync" ]]; then
+        wait_for_ui_sync_network
+      fi
       if [[ -n "${config}" ]]; then
         exec setsid "${bin}" "${config}"
       else
@@ -326,6 +353,9 @@ start_process() {
       if [[ "${name}" == "ouster" ]]; then
         export OUSTER_KISS_DIAGNOSTIC_CSV="${OUSTER_KISS_DIAGNOSTIC_CSV-${LOG_DIR}/ouster_kiss_registration.csv}"
         export OUSTER_METADATA_JSON="${OUSTER_METADATA_JSON-${LOG_DIR}/ouster_metadata.json}"
+      fi
+      if [[ "${name}" == "robot_ui_sync" ]]; then
+        wait_for_ui_sync_network
       fi
       if [[ -n "${config}" ]]; then
         exec setsid "${bin}" "${config}"

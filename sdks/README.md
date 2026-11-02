@@ -117,6 +117,14 @@ or `pip install kiss-icp` does not provide the CMake targets used by this
 workspace. The `ouster-sdk/thirdparty/sophus` directory must also be present;
 it is supplied with the Ouster checkout and used by the KISS build.
 
+The commands in step 3 build **only Ouster**. For any other dependency that
+needs a separate build or installation, follow the build instructions in that
+dependency's own repository (and any integration instructions in the source
+package that uses it). The table above identifies dependencies that the
+current source packages build automatically as CMake subdirectories; do not
+run a separate SDK build for those unless their repository instructions or a
+different consuming package require one.
+
 ## 3. Build the Ouster C++ SDK
 
 The publisher expects the Ouster CMake package at
@@ -190,5 +198,7 @@ consume them:
 
 Preserve these folder names and locations when copying or downloading the
 SDKs. They are **recommended workspace dependencies**, not obsolete files.
-Build or install each one according to the additional repository that needs
-it; the current `build_src_repos.sh` does not build these six SDKs.
+When using one of these SDKs, read its own repository's README or build guide
+and the instructions of the source package that uses it, then build or install
+it as directed there. The current `build_src_repos.sh` does not build these
+six SDKs.

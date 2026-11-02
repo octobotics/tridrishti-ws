@@ -36,6 +36,14 @@ Node logs remain in `logs/robot/<session>/` and are created by root. The optiona
 `/etc/default/tridrishti-robot-stack` file can set launcher variables such as
 `CAN_IFACE`, `CAN_BITRATE`, or `STARTUP_DELAY_SEC`.
 
+The launcher waits for the robot Ethernet link, an IPv4 address, and the
+multicast route before starting `robot_ui_sync`. Other nodes start while the
+network is disconnected. The default interface is `enP1p1s0`; set
+`UI_SYNC_NETWORK_IFACE` in `/etc/default/tridrishti-robot-stack` if the robot
+uses another interface. If the link is absent, `robot_ui_sync.log` shows the
+waiting message until the connection is ready. This prevents eCAL network
+publishers from starting before NetworkManager configures the interface.
+
 To remove the service (stopping the running stack first):
 
 ```bash
